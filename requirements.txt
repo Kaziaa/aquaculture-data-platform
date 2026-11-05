@@ -1,0 +1,5 @@
+# Pin versions after initial environment setup
+pandas
+numpy
+pyarrow
+pytest
