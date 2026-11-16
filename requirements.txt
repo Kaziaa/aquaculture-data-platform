@@ -1,5 +1,28 @@
-# Pin versions after initial environment setup
-pandas
-numpy
-pyarrow
-pytest
+# AquaInsight Python dependencies
+# Tested with Python 3.12
+
+# Data processing
+pandas==3.1.1
+numpy==2.5.4
+pyarrow==26.0.1
+
+# PostgreSQL
+SQLAlchemy==2.1.8
+psycopg==3.3.8
+
+# REST API
+fastapi==0.162.4
+uvicorn==0.54.0
+pydantic==2.14.3
+
+# Dashboard
+streamlit==1.67.0
+plotly==7.1.0
+requests==2.34.2
+
+# Configuration
+python-dotenv==1.2.4
+
+# Testing
+pytest==9.2.0
+httpx==0.28.1
