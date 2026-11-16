@@ -502,3 +502,169 @@ def test_available_years(monkeypatch):
     assert data["status"] == "success"
     assert data["total_years"] == 3
     assert data["years"] == [2023, 2024, 2025]
+# ============================================================
+# TEST 12: DATA-QUALITY ENDPOINT WITH MOCK DATABASE
+# Day 10 — Task 10.37
+# ============================================================
+
+def test_data_quality_endpoint(monkeypatch):
+    """
+    Verify the data-quality endpoint using a mocked
+    PostgreSQL connection.
+    """
+
+    # --------------------------------------------------------
+    # 1. Prepare simulated PostgreSQL data
+    # --------------------------------------------------------
+
+    mock_data = [
+        {
+            "year": 2025,
+            "total_observations": 55646,
+            "probably_without_fish_not_counted": 24947,
+            "fish_status_false_not_counted": 400,
+            "lice_counted_observations": 30299,
+            "missing_lice_measurements": 25347,
+            "missing_percentage": 45.55,
+            "reporting_conflicts": 34,
+        }
+    ]
+
+    # --------------------------------------------------------
+    # 2. Create a mock SQLAlchemy Engine
+    # --------------------------------------------------------
+
+    mock_engine = MagicMock()
+
+    mock_connection = (
+        mock_engine.connect.return_value.__enter__.return_value
+    )
+
+    mock_connection.execute.return_value.mappings.return_value.all.return_value = (
+        mock_data
+    )
+
+    # --------------------------------------------------------
+    # 3. Replace the real Engine with our mock
+    # --------------------------------------------------------
+
+    monkeypatch.setattr(
+        "api.main.get_engine",
+        lambda: mock_engine,
+    )
+
+    # --------------------------------------------------------
+    # 4. Send request to the FastAPI endpoint
+    # --------------------------------------------------------
+
+    response = client.get("/api/v1/data-quality")
+
+    # --------------------------------------------------------
+    # 5. Verify HTTP response
+    # --------------------------------------------------------
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    # --------------------------------------------------------
+    # 6. Verify JSON response structure
+    # --------------------------------------------------------
+
+    assert data["status"] == "success"
+    assert data["total_years"] == 1
+
+    assert len(data["data"]) == 1
+
+    # --------------------------------------------------------
+    # 7. Verify reporting-quality statistics
+    # --------------------------------------------------------
+
+    record = data["data"][0]
+
+    assert record["year"] == 2025
+    assert record["total_observations"] == 55646
+
+    assert record["probably_without_fish_not_counted"] == 24947
+    assert record["fish_status_false_not_counted"] == 400
+
+    assert record["lice_counted_observations"] == 30299
+
+    assert record["missing_lice_measurements"] == 25347
+    assert record["missing_percentage"] == 45.55
+
+    assert record["reporting_conflicts"] == 34
+
+    # --------------------------------------------------------
+    # 8. Verify that the database was queried
+    # --------------------------------------------------------
+
+    mock_engine.connect.assert_called_once()
+
+    mock_connection.execute.assert_called_once()
+# ============================================================
+# TEST 13: DATA-QUALITY DATABASE FAILURE
+# Day 10 — Task 10.38
+# ============================================================
+
+def test_data_quality_database_failure(monkeypatch):
+    """
+    Verify that the data-quality endpoint returns
+    HTTP 503 when PostgreSQL is unavailable.
+    """
+
+    # Simulate a database connection failure
+    def mock_get_engine():
+        raise OperationalError(
+            "SELECT 1",
+            {},
+            Exception("Simulated database failure")
+        )
+
+    # Replace real database connection function
+    monkeypatch.setattr(
+        "api.main.get_engine",
+        mock_get_engine
+    )
+
+    # Send request to FastAPI
+    response = client.get("/api/v1/data-quality")
+
+    # Verify HTTP status
+    assert response.status_code == 503
+
+    # Verify error message
+    assert response.json() == {
+        "detail": "Data-quality statistics unavailable"
+    }
+# ============================================================
+# TEST 14 — DATA-QUALITY CATEGORY CONSISTENCY
+# Day 10 — Task 10.42
+# ============================================================
+
+def test_data_quality_invalid_category_totals():
+    """
+    Verify that Pydantic rejects reporting categories
+    whose combined count exceeds total observations.
+    """
+
+    from api.schemas import DataQualityRecord
+
+    # Construct an intentionally inconsistent record
+    invalid_data = {
+        "year": 2025,
+        "total_observations": 100,
+        "probably_without_fish_not_counted": 80,
+        "fish_status_false_not_counted": 50,
+        "lice_counted_observations": 60,
+        "missing_lice_measurements": 40,
+        "missing_percentage": 40.0,
+        "reporting_conflicts": 0,
+    }
+
+    # Pydantic should reject the record
+    with pytest.raises(
+        ValidationError,
+        match="Reporting categories cannot exceed total observations"
+    ):
+        DataQualityRecord(**invalid_data)

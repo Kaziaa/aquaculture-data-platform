@@ -1,13 +1,27 @@
 # ============================================================
-# AquaInsight — REST API
-# Day 9 — Task 9.18
+# AquaInsight — FastAPI Backend
 #
-# Features:
-#   1. FastAPI application
-#   2. Shared PostgreSQL connection pooling
-#   3. Pydantic response validation
-#   4. Dynamic reporting-year validation
-#   5. Database error handling
+# Norwegian Aquaculture Health Analytics
+#
+# Database: PostgreSQL
+# ORM / Database interface: SQLAlchemy
+# API Framework: FastAPI
+# Validation: Pydantic
+#
+# API endpoints:
+#
+# 1. GET /api/v1/health
+# 2. GET /api/v1/database/health
+# 3. GET /api/v1/annual-summary
+# 4. GET /api/v1/production-areas/{year}
+# 5. GET /api/v1/available-years
+# 6. GET /api/v1/data-quality
+#
+# ============================================================
+
+
+# ============================================================
+# 1. IMPORTS
 # ============================================================
 
 from contextlib import asynccontextmanager
@@ -16,137 +30,122 @@ from fastapi import FastAPI, HTTPException, Path
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-# Database functions
-from src.database import get_engine, get_available_years
+from src.database import (
+    get_engine,
+    get_available_years,
+)
 
-# Pydantic response models
 from api.schemas import (
     AnnualSummaryResponse,
     ProductionAreaResponse,
+    DataQualityResponse,
 )
 
 
 # ============================================================
-# 1. APPLICATION LIFESPAN
+# 2. APPLICATION LIFESPAN
 # ============================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Manage the lifecycle of the shared SQLAlchemy Engine.
+    Manage application startup and shutdown.
 
-    Startup:
-        The Engine is created when first needed.
+    SQLAlchemy creates database connections when needed.
 
-    Shutdown:
-        Dispose of the Engine and clear its cache.
+    On shutdown, dispose of the shared Engine's connection
+    pool and clear the cached Engine reference.
     """
 
-    # Application startup
     yield
 
-    # Application shutdown
     if get_engine.cache_info().currsize > 0:
-
         engine = get_engine()
-
         engine.dispose()
-
         get_engine.cache_clear()
 
 
 # ============================================================
-# 2. CREATE FASTAPI APPLICATION
+# 3. FASTAPI APPLICATION
 # ============================================================
 
 app = FastAPI(
     title="AquaInsight API",
     description=(
-        "REST API for Norwegian aquaculture data analysis, "
-        "including sea-lice statistics and production-area trends."
+        "REST API for Norwegian aquaculture health "
+        "and sea-lice analytics using BarentsWatch data."
     ),
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
 # ============================================================
-# 3. ENDPOINT 1 — API HEALTH CHECK
+# 4. ENDPOINT 1 — API HEALTH
 # ============================================================
 
 @app.get(
     "/api/v1/health",
     tags=["Health"],
-    summary="Check API availability"
+    summary="Check API health",
 )
 def health_check():
     """
-    Check whether the FastAPI application is responding.
+    Verify that the FastAPI application is responding.
 
     This endpoint does not query PostgreSQL.
     """
 
     return {
         "status": "ok",
-        "service": "AquaInsight"
+        "service": "AquaInsight",
     }
 
 
 # ============================================================
-# 4. ENDPOINT 2 — DATABASE HEALTH CHECK
+# 5. ENDPOINT 2 — DATABASE HEALTH
 # ============================================================
 
 @app.get(
     "/api/v1/database/health",
     tags=["Health"],
-    summary="Check PostgreSQL connectivity"
+    summary="Check PostgreSQL connectivity",
 )
 def database_health_check():
     """
-    Verify that the API can communicate with PostgreSQL.
+    Verify that PostgreSQL can execute a simple query.
     """
 
     try:
-
-        # Retrieve the shared SQLAlchemy Engine
         engine = get_engine()
 
-        # Open a connection from the pool
         with engine.connect() as connection:
-
-            result = connection.execute(
-                text(
-                    "SELECT current_database(), current_user"
-                )
-            )
-
-            database, user = result.one()
+            connection.execute(text("SELECT 1"))
 
         return {
-            "status": "connected",
-            "database": database,
-            "user": user
+            "status": "ok",
+            "database": "PostgreSQL",
         }
 
     except (SQLAlchemyError, ValueError) as error:
 
-        print(f"Database health-check error: {error}")
+        print(f"Database health check failed: {error}")
 
         raise HTTPException(
             status_code=503,
-            detail="Database connection unavailable"
+            detail="Database connection unavailable",
         ) from error
 
 
 # ============================================================
-# 5. ENDPOINT 3 — NATIONAL ANNUAL SEA-LICE STATISTICS
+# 6. ENDPOINT 3 — NATIONAL ANNUAL SEA-LICE STATISTICS
 # ============================================================
 
 @app.get(
     "/api/v1/annual-summary",
     response_model=AnnualSummaryResponse,
     tags=["Analytics"],
-    summary="Retrieve annual sea-lice statistics"
+    summary="Retrieve annual sea-lice statistics",
 )
 def get_annual_summary():
     """
@@ -168,10 +167,10 @@ def get_annual_summary():
 
     try:
 
-        # Retrieve the shared SQLAlchemy Engine
+        # Retrieve shared SQLAlchemy Engine
         engine = get_engine()
 
-        # SQL query against our validated analytical view
+        # Query the validated analytical view
         query = text("""
             SELECT
                 year,
@@ -189,21 +188,20 @@ def get_annual_summary():
             ORDER BY year
         """)
 
-        # Execute the query
+        # Execute query
         with engine.connect() as connection:
 
             result = connection.execute(query)
 
-            # Retrieve dictionary-like SQL records
             rows = result.mappings().all()
 
-        # Convert SQL results to Python dictionaries
+        # Convert SQLAlchemy rows into dictionaries
         data = [dict(row) for row in rows]
 
         return {
             "status": "success",
             "total_years": len(data),
-            "data": data
+            "data": data,
         }
 
     except (SQLAlchemyError, ValueError) as error:
@@ -212,79 +210,66 @@ def get_annual_summary():
 
         raise HTTPException(
             status_code=503,
-            detail="Annual summary data unavailable"
+            detail="Annual summary data unavailable",
         ) from error
 
 
 # ============================================================
-# 6. ENDPOINT 4 — PRODUCTION-AREA STATISTICS
+# 7. ENDPOINT 4 — PRODUCTION-AREA STATISTICS
 # ============================================================
 
 @app.get(
     "/api/v1/production-areas/{year}",
     response_model=ProductionAreaResponse,
     tags=["Analytics"],
-    summary="Retrieve production-area sea-lice statistics"
+    summary="Retrieve production-area statistics",
 )
 def get_production_areas(
     year: int = Path(
         ...,
-        description="Reporting year available in PostgreSQL"
-    )
+        description="Reporting year available in PostgreSQL",
+    ),
 ):
     """
-    Retrieve annual sea-lice statistics for Norwegian
-    aquaculture production areas.
+    Retrieve production-area sea-lice statistics for
+    a selected reporting year.
 
-    The requested year is validated dynamically against
-    the years available in PostgreSQL.
+    PostgreSQL view:
+        aquainsight.v_production_area_annual
 
-    Returns:
-        - Production-area ID
-        - Production-area name
-        - Number of unique localities
-        - Eligible observations
-        - Exceedance observations
-        - Exceedance percentage
-
-    Results are ordered by exceedance percentage,
-    highest first.
-
-    Observations with missing production-area IDs
-    are excluded from this geographical ranking.
+    The reporting year must exist in PostgreSQL.
     """
+
+    # --------------------------------------------------------
+    # 7.1 Validate reporting year
+    # --------------------------------------------------------
+
+    try:
+        available_years = get_available_years()
+
+    except (SQLAlchemyError, ValueError) as error:
+
+        print(f"Failed to retrieve available years: {error}")
+
+        raise HTTPException(
+            status_code=503,
+            detail="Reporting years unavailable",
+        ) from error
+
+    if year not in available_years:
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"No aquaculture data available for year {year}",
+        )
+
+    # --------------------------------------------------------
+    # 7.2 Retrieve production-area statistics
+    # --------------------------------------------------------
 
     try:
 
-        # ----------------------------------------------------
-        # STEP 1: RETRIEVE AVAILABLE YEARS
-        # ----------------------------------------------------
-
-        years = get_available_years()
-
-        # ----------------------------------------------------
-        # STEP 2: VALIDATE REQUESTED YEAR
-        # ----------------------------------------------------
-
-        if year not in years:
-
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"No aquaculture data available "
-                    f"for year {year}"
-                )
-            )
-
-        # ----------------------------------------------------
-        # STEP 3: RETRIEVE SHARED DATABASE ENGINE
-        # ----------------------------------------------------
-
         engine = get_engine()
-
-        # ----------------------------------------------------
-        # STEP 4: DEFINE SQL QUERY
-        # ----------------------------------------------------
 
         query = text("""
             SELECT
@@ -298,28 +283,20 @@ def get_production_areas(
             FROM aquainsight.v_production_area_annual
 
             WHERE year = :year
-              AND production_area_id IS NOT NULL
 
             ORDER BY
-                exceedance_percentage DESC NULLS LAST
+                exceedance_percentage DESC NULLS LAST,
+                production_area_id
         """)
-
-        # ----------------------------------------------------
-        # STEP 5: EXECUTE PARAMETERIZED QUERY
-        # ----------------------------------------------------
 
         with engine.connect() as connection:
 
             result = connection.execute(
                 query,
-                {"year": year}
+                {"year": year},
             )
 
             rows = result.mappings().all()
-
-        # ----------------------------------------------------
-        # STEP 6: PREPARE API RESPONSE
-        # ----------------------------------------------------
 
         data = [dict(row) for row in rows]
 
@@ -327,7 +304,7 @@ def get_production_areas(
             "status": "success",
             "year": year,
             "total_production_areas": len(data),
-            "data": data
+            "data": data,
         }
 
     except (SQLAlchemyError, ValueError) as error:
@@ -336,36 +313,35 @@ def get_production_areas(
 
         raise HTTPException(
             status_code=503,
-            detail="Production-area data unavailable"
+            detail="Production-area data unavailable",
         ) from error
 
 
 # ============================================================
-# 7. ENDPOINT 5 — AVAILABLE REPORTING YEARS
+# 8. ENDPOINT 5 — AVAILABLE REPORTING YEARS
 # ============================================================
 
 @app.get(
     "/api/v1/available-years",
     tags=["Analytics"],
-    summary="Retrieve available reporting years"
+    summary="Retrieve available reporting years",
 )
 def available_years():
     """
-    Retrieve reporting years available in PostgreSQL.
+    Return available reporting years from PostgreSQL.
 
-    Unlike a hardcoded year range, these values
-    automatically reflect the database contents.
+    Streamlit uses these years to populate the
+    interactive reporting-year selector.
     """
 
     try:
 
-        # Query PostgreSQL for available reporting years
         years = get_available_years()
 
         return {
             "status": "success",
             "total_years": len(years),
-            "years": years
+            "years": years,
         }
 
     except (SQLAlchemyError, ValueError) as error:
@@ -374,5 +350,110 @@ def available_years():
 
         raise HTTPException(
             status_code=503,
-            detail="Available reporting years unavailable"
+            detail="Reporting years unavailable",
         ) from error
+
+
+# ============================================================
+# 9. ENDPOINT 6 — ANNUAL DATA QUALITY
+# Day 10 — Task 10.33
+# ============================================================
+
+@app.get(
+    "/api/v1/data-quality",
+    response_model=DataQualityResponse,
+    tags=["Analytics"],
+    summary="Retrieve annual aquaculture data-quality statistics",
+)
+def get_data_quality():
+    """
+    Retrieve annual reporting-quality statistics.
+
+    PostgreSQL view:
+        aquainsight.v_annual_data_quality
+
+    Returns:
+        - Reporting year
+        - Total observations
+        - Probably without fish, lice not counted
+        - Not flagged as without fish, lice not counted
+        - Lice-counted observations
+        - Missing adult female lice measurements
+        - Missing measurement percentage
+        - Reporting conflicts
+
+    Important:
+        Missing measurements do not automatically
+        indicate reporting failures.
+    """
+
+    try:
+
+        # ----------------------------------------------------
+        # 9.1 Retrieve shared database Engine
+        # ----------------------------------------------------
+
+        engine = get_engine()
+
+        # ----------------------------------------------------
+        # 9.2 Define SQL query
+        # ----------------------------------------------------
+
+        query = text("""
+            SELECT
+                year,
+                total_observations,
+                probably_without_fish_not_counted,
+                fish_status_false_not_counted,
+                lice_counted_observations,
+                missing_lice_measurements,
+                missing_percentage,
+                reporting_conflicts
+
+            FROM aquainsight.v_annual_data_quality
+
+            ORDER BY year
+        """)
+
+        # ----------------------------------------------------
+        # 9.3 Execute SQL query
+        # ----------------------------------------------------
+
+        with engine.connect() as connection:
+
+            result = connection.execute(query)
+
+            rows = result.mappings().all()
+
+        # ----------------------------------------------------
+        # 9.4 Convert results into Python dictionaries
+        # ----------------------------------------------------
+
+        data = [
+            dict(row)
+            for row in rows
+        ]
+
+        # ----------------------------------------------------
+        # 9.5 Return validated JSON response
+        # ----------------------------------------------------
+
+        return {
+            "status": "success",
+            "total_years": len(data),
+            "data": data,
+        }
+
+    except (SQLAlchemyError, ValueError) as error:
+
+        print(f"Data-quality query failed: {error}")
+
+        raise HTTPException(
+            status_code=503,
+            detail="Data-quality statistics unavailable",
+        ) from error
+
+
+# ============================================================
+# END OF AQUAINSIGHT FASTAPI APPLICATION
+# ============================================================
