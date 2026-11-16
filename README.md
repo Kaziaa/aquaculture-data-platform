@@ -7,8 +7,7 @@ A free/open-source Python, PostgreSQL, ETL, data-science and Streamlit portfolio
 ## Purpose
 Demonstrate end-to-end data engineering and applied data science: provenance, cleaning, SQL, reproducibility, analysis, visualization, testing and local deployment.
 
-## Timeline
-4 November–10 December 2026, 2 hours per day. See [PROJECT_PLAN.md](PROJECT_PLAN.md) and [PROGRESS.md](PROGRESS.md).
+
 
 ## Free stack
 Python, pandas, PostgreSQL, SQLAlchemy, pytest, Streamlit, Plotly, scikit-learn, Docker Engine on Linux, Git/GitHub. Optional local Prefect and GitHub Actions within free allowances.
