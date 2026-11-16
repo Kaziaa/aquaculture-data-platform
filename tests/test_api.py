@@ -284,45 +284,86 @@ def test_annual_summary_database_failure(monkeypatch):
 # ============================================================
 
 def test_engine_disposal_on_shutdown(monkeypatch):
+    """
+    Verify that FastAPI disposes of the cached SQLAlchemy
+    Engine when the application shuts down.
+
+    This test must work without:
+    - A real PostgreSQL database
+    - A local .env file
+    - Real database credentials
+    """
 
     from src.database import get_engine
 
-    # Clear any previously cached Engine
+    # --------------------------------------------------------
+    # 1. Clear any previously cached Engine
+    # --------------------------------------------------------
+
     get_engine.cache_clear()
 
-    # Create a simulated SQLAlchemy Engine
+    # --------------------------------------------------------
+    # 2. Set a temporary dummy database password
+    # --------------------------------------------------------
+
+    # GitHub Actions does not have our local .env file.
+    # The dummy value satisfies the configuration check.
+    # No real database connection will be established.
+
+    monkeypatch.setenv(
+        "DB_PASSWORD",
+        "test_password"
+    )
+
+    # --------------------------------------------------------
+    # 3. Create a simulated SQLAlchemy Engine
+    # --------------------------------------------------------
+
     mock_engine = MagicMock()
 
-    # Replace the real SQLAlchemy Engine factory
+    # --------------------------------------------------------
+    # 4. Replace the real SQLAlchemy Engine factory
+    # --------------------------------------------------------
+
     monkeypatch.setattr(
         "src.database.create_engine",
         lambda *args, **kwargs: mock_engine
     )
 
-    # Start and stop FastAPI using a context manager
+    # --------------------------------------------------------
+    # 5. Start FastAPI
+    # --------------------------------------------------------
+
     with TestClient(app) as test_client:
 
-        # Make a request that does not require PostgreSQL
+        # Check the health endpoint
         response = test_client.get("/api/v1/health")
 
         assert response.status_code == 200
 
-        # Create the cached Engine while FastAPI is running
+        # ----------------------------------------------------
+        # 6. Create the cached Engine
+        # ----------------------------------------------------
+
         engine = get_engine()
 
+        # Verify that the mocked Engine was returned
         assert engine is mock_engine
 
-        # Engine must remain available during application operation
+        # Engine should remain active while FastAPI runs
         mock_engine.dispose.assert_not_called()
 
-    # Exiting TestClient triggers application shutdown
+    # --------------------------------------------------------
+    # 7. Verify shutdown cleanup
+    # --------------------------------------------------------
 
-    # Verify the Engine was disposed of once
+    # Exiting TestClient triggers application shutdown.
+
+    # Engine should be disposed of exactly once
     mock_engine.dispose.assert_called_once()
 
-    # Verify the Engine cache was cleared
+    # The cached Engine should be cleared
     assert get_engine.cache_info().currsize == 0
-
 
 # ============================================================
 # TEST 7: PYDANTIC RESPONSE VALIDATION
