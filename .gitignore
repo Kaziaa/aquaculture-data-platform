@@ -16,3 +16,6 @@ models/*.pkl
 models/*.joblib
 mlruns/
 .ipynb_checkpoints/
+
+# AquaInsight — Rebuilt pipeline outputs
+outputs/*_rebuilt_*.png
