@@ -1,4 +1,4 @@
-name: AquaInsight Python Tests
+name: AquaInsight Automated Tests
 
 on:
   push:
@@ -7,7 +7,13 @@ on:
     branches: [main]
 
 jobs:
+
+  # ==========================================================
+  # JOB 1: PYTHON TESTS
+  # ==========================================================
+
   test:
+    name: Python Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -27,3 +33,52 @@ jobs:
       - name: Run automated tests
         run: |
           python -m pytest tests/ -v
+
+
+  # ==========================================================
+  # JOB 2: POSTGRESQL TESTS
+  # ==========================================================
+
+  postgres-test:
+    name: PostgreSQL SQL Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+
+        env:
+          POSTGRES_USER: aquainsight_user
+          POSTGRES_PASSWORD: ci_test_password
+          POSTGRES_DB: aquainsight_test
+
+        ports:
+          - 5432:5432
+
+        options: >-
+          --health-cmd "pg_isready -U aquainsight_user -d aquainsight_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run PostgreSQL analytical tests
+        env:
+          PGPASSWORD: ci_test_password
+        run: |
+          psql \
+            -h 127.0.0.1 \
+            -U aquainsight_user \
+            -d aquainsight_test \
+            -v ON_ERROR_STOP=1 \
+            --single-transaction \
+            -f sql/05_run_database_tests.sql
