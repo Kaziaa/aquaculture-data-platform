@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from orchestration.atomic_writer import atomic_write_parquet
+
 
 # ============================================================
 # STEP 1: PROJECT CONFIGURATION
@@ -540,10 +542,9 @@ def save_data(df):
     # Save dataset
     # --------------------------------------------------------
 
-    df.to_parquet(
-        OUTPUT_FILE,
-        engine="pyarrow",
-        index=False
+    atomic_write_parquet(
+        df,
+        OUTPUT_FILE
     )
 
     # --------------------------------------------------------
