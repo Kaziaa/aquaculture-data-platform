@@ -54,11 +54,17 @@ The following components are operational in the local development environment:
 - Automated tests
 - GitHub Actions Continuous Integration
 
-The project currently includes **25 automated tests**, successfully executed locally and through GitHub Actions.
+The project currently includes **40 automated tests**, successfully executed locally and through GitHub Actions.
 
 Further development focuses on deployment reproducibility, documentation, and additional analytical capabilities.
 
 ---
+
+### System Architecture
+
+View the complete architecture diagram and technical details:
+
+[AquaInsight System Architecture](docs/ARCHITECTURE.md)
 
 ## 3. Technology Stack
 
@@ -185,6 +191,83 @@ Streamlit retrieves data from FastAPI and presents interactive analytical visual
 
 ---
 
+## 5A. Pipeline Reliability and Incremental Ingestion
+
+### Historical ETL Orchestration
+
+AquaInsight includes a Python orchestration layer for managing
+historical data consolidation and cleaning.
+
+The orchestration workflow:
+
+1. Checks whether expected outputs already exist.
+2. Validates existing outputs against reference datasets.
+3. Skips valid processing stages.
+4. Rebuilds missing or invalid outputs.
+5. Uses atomic Parquet writes to protect existing valid files.
+6. Stops execution if a processing stage fails.
+
+The primary orchestration entry point is:
+
+`orchestration/run_pipeline.py`
+
+Atomic file writing is implemented in:
+
+`orchestration/atomic_writer.py`
+
+The current historical workflow requires locally available
+BarentsWatch source files and reference datasets.
+
+### Incremental PostgreSQL Ingestion
+
+AquaInsight also includes a validated incremental ingestion prototype.
+
+The ingestion process:
+
+1. Validates the expected 28-column dataset structure.
+2. Validates primary-key values and detects duplicate keys.
+3. Checks PostgreSQL-compatible column types.
+4. Converts missing values to database-compatible NULL values.
+5. Classifies observations as INSERT, UPDATE, or SKIP.
+6. Executes parameterized PostgreSQL upserts in batches.
+7. Uses transactions to roll back failed ingestion operations.
+8. Reports inserted, updated, unchanged, and affected records.
+
+The composite primary key is:
+
+`(year, week, locality_id)`
+
+The implementation is organized into the following modules:
+
+| Module | Responsibility |
+|---|---|
+| `src/incremental_fishhealth.py` | Input validation and record preparation |
+| `src/incremental_type_validation.py` | Strict data-type validation |
+| `src/incremental_upsert.py` | Parameterized PostgreSQL upsert construction |
+| `src/incremental_metrics.py` | INSERT, UPDATE, and SKIP classification |
+| `src/incremental_loader.py` | Batch execution and transaction management |
+
+### Current Implementation Limitations
+
+The incremental ingestion system has been tested using isolated
+PostgreSQL temporary tables.
+
+**Production incremental database writes are not enabled.**
+
+INSERT and UPDATE classifications are determined before upsert
+execution and are not concurrency-safe for simultaneous writers.
+
+The current classification implementation also executes a database
+query for each observation, which is inefficient for large datasets.
+
+Future development should introduce set-based ingestion, concurrency
+controls, and production-specific operational safeguards.
+
+These limitations are intentionally documented to distinguish
+validated prototype functionality from production-ready capabilities.
+
+---
+
 ## 6. FastAPI Backend
 
 AquaInsight provides six REST API endpoints.
@@ -288,7 +371,7 @@ Installation has been verified in a clean Python 3.12 Conda environment.
 python -m pytest tests/ -v
 ```
 
-The test suite includes 25 automated tests covering:
+The test suite includes 40 automated tests covering:
 
 - FastAPI endpoints
 - API response validation
@@ -298,15 +381,24 @@ The test suite includes 25 automated tests covering:
 - Data-quality checks
 - ETL integration using synthetic data
 
-These tests do not require a running PostgreSQL server or the complete historical dataset.
+The complete test suite requires an initialized PostgreSQL database for integration testing. The historical dataset is not required because integration tests use synthetic fixtures.
 
 ### Expected Test Result
 
 ```text
-25 passed
+40 passed
 ```
 
 A non-failing dependency deprecation warning may also appear.
+
+---
+
+
+### PostgreSQL Setup Guide
+
+For database configuration, schema initialization, historical loading, and integration testing, see:
+
+[PostgreSQL Database Setup](docs/DATABASE_SETUP.md)
 
 ---
 
