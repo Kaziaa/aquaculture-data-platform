@@ -175,6 +175,11 @@ def test_cleaning_failure_stops_pipeline():
         ),
         patch.object(
             pipeline,
+            "CONSOLIDATED_OUTPUT",
+            **{"is_file.return_value": True},
+        ),
+        patch.object(
+            pipeline,
             "execute_stage",
             side_effect=simulated_error,
         ) as executor,
